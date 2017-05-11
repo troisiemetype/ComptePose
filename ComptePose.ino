@@ -29,8 +29,9 @@
  */
 
 
-Timer timerBlink;
 Timer timer;
+Timer timerRun;
+Timer timerPause;
 
 FourDigits display;
 
@@ -38,7 +39,7 @@ Encoder encoder;
 
 PushButton button;
 
-bool ledState = LOW;
+bool enable = LOW;
 
 int8_t minutes, seconds = 0;
 int16_t duration = 0;
@@ -55,14 +56,15 @@ const uint8_t output = 13;
 
 void setup(){
 
-	timerBlink.init();
+	timerPause.init();
 	timer.init();
 
-	timerBlink.setDelay(500);
+	timerPause.setDelay(500);
+	timerRun.setDelay(500);
 
 	display.init(6, 7, 8, 9);
 
-	encoder.begin(2, 3);
+	encoder.begin(2, 3, Encoder::QUAD_STEP);
 	encoder.reverse();
 
 	button.begin(10, INPUT_PULLUP);
@@ -101,9 +103,9 @@ void setting(){
 }
 
 void running(){
-	if(timerBlink.update()){
-		ledState = !ledState;
-		display.setPoint(ledState);
+	if(timerRun.update()){
+		enable = !enable;
+		display.setPoint(enable);
 	}
 
 	display.setMinutes(timer.getRMinutes());
@@ -117,17 +119,72 @@ void running(){
 
 void pause(){
 	timer.update();
-	if(timerBlink.update()){
-		ledState = !ledState;
-		display.enable(ledState);
+	if(timerPause.update()){
+		enable = !enable;
+		display.enable(enable);
 	}
 	display.update();
+}
+
+void manageButton(){
+	if(button.isLongPressed()){
+		stop();
+
+	} else if(button.justPressed()){
+		switch(state){
+			case SETTING:
+				state = RUN;
+				display.setMinutes(minutes);
+				display.setSeconds(seconds);
+				timer.setMinutesSeconds(minutes, seconds);
+				digitalWrite(output, HIGH);
+				timer.start();
+				timerRun.start(Timer::LOOP);
+				break;
+			case RUN:
+				timer.pause();
+				timerRun.pause();
+				enable = LOW;
+				display.enable(enable);
+				timerPause.start(Timer::LOOP);
+				digitalWrite(output, LOW);
+				state = PAUSE;
+				break;
+			case PAUSE:
+				timer.pause();
+				timerRun.pause();
+				timerPause.stop();
+				enable = HIGH;
+				digitalWrite(output, HIGH);
+				state = RUN;
+				display.enable(true);
+				break;
+			default:
+				setting();
+				break;
+		}
+	}
+}
+
+void stop(){
+	timer.stop();
+
+	display.enable();
+	display.setPoint(true);
+	display.setMinutes(minutes);
+	display.setSeconds(seconds);
+
+	digitalWrite(output, LOW);
+
+	state = SETTING;
 }
 
 void setTime(int8_t value){
 	if(duration >= 300){
 		setSeconds(value * 15);
 	} else if (duration >= 120){
+		setSeconds(value * 10);
+	} else if (duration >= 30){
 		setSeconds(value * 5);
 	} else {
 		setSeconds(value);
@@ -167,53 +224,5 @@ bool setMinutes(int8_t value){
 		display.setMinutes(minutes);
 		return true;
 	}
-
-}
-
-void manageButton(){
-	if(button.isLongPressed()){
-		stop();
-
-	} else if(button.justPressed()){
-		switch(state){
-			case SETTING:
-				state = RUN;
-				display.setMinutes(minutes);
-				display.setSeconds(seconds);
-				timer.setMinutesSeconds(minutes, seconds);
-				digitalWrite(output, HIGH);
-				timer.start();
-				timerBlink.start(Timer::LOOP);
-				break;
-			case RUN:
-				timer.pause();
-				digitalWrite(output, LOW);
-				state = PAUSE;
-				break;
-			case PAUSE:
-				timer.pause();
-				digitalWrite(output, HIGH);
-				state = RUN;
-				display.enable(true);
-				break;
-			default:
-				setting();
-				break;
-		}
-	}
-
-}
-
-void stop(){
-	timer.stop();
-
-	display.enable();
-	display.setPoint(true);
-	display.setMinutes(minutes);
-	display.setSeconds(seconds);
-
-	digitalWrite(output, LOW);
-
-	state = SETTING;
 
 }
