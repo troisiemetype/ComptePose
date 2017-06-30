@@ -1,0 +1,15 @@
+[submodule "*/Libraries/Encoder"]
+	path = */Libraries/Encoder
+	url = https://github.com/troisiemetype/Encoder
+[submodule "Libraries/Encoder"]
+	path = Libraries/Encoder
+	url = https://github.com/troisiemetype/Encoder
+[submodule "Libraries/Timer"]
+	path = Libraries/Timer
+	url = https://github.com/troisiemetype/Timer
+[submodule "Libraries/PushButton"]
+	path = Libraries/PushButton
+	url = https://github.com/troisiemetype/PushButton
+[submodule "Libraries/MAX7219"]
+	path = Libraries/MAX7219
+	url = https://www.github.com/troisiemetype/MAX7219/
