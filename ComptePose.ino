@@ -53,6 +53,9 @@
  *	is when the exposure is beeing done, but has been pause. Trace is kept of the time elapsed,
  *	and exposure can be resume.
  *
+ ** MENU
+ *	is for saving time to, or reading from memory, and set the diplay light intensity.
+ *
  * The main loop reads main button (SW2), and call button management function if needed,
  * or dispatch to main subfunctions according to the current state.
  * See functions for more information on what happens
@@ -80,6 +83,9 @@ const uint8_t BELL = 10;
 const uint16_t brightAdd = 0;
 const uint16_t bellAdd = 1;
 const uint16_t memAdd = 2;
+
+// Max exposure values in eeprom
+const uint8_t maxStore = 64;
 
 // these are the timers used, for lighting duration and run and pause blinking
 // NOTA: two timers are used for blinking. One while running, the other while pausing.
@@ -141,11 +147,12 @@ enum menuState_t{
 };
 
 // And the current state
-uint8_t menuState = MEM_STORE;
+uint8_t menuState = MEM_RECALL;
 
 
 // Start compte pose.
 void setup(){
+
 	// init the timers
 	timerMain.init();
 	timerDots.init();
@@ -166,6 +173,7 @@ void setup(){
 	ledDriver.setIntensity(brightness - 1);
 
 	clock.begin(&ledDriver);
+	clock.setDots();
 
 	// init the encoder
 	// QUAD_STEP and reverse() may not be needed, following encoder used.
@@ -179,14 +187,14 @@ void setup(){
 
 	// Set the command pin
 	pinMode(OUT, OUTPUT);
-	digitalWrite(OUT, LOW);
+	digitalWrite(OUT, HIGH);
 }
 
 // Main loop: read buttons, dispatch to state function
 void loop(){
+//	if(timerBeep.update()) tone(BELL, 1760, 500);
 	if(sw2.update()) manageSW2();
 	if(sw3.update()) manageSW3();
-
 	switch(state){
 		case SETTING:
 			setting();
@@ -234,7 +242,7 @@ void running(){
 	// Manage delay elapsed
 	if(timerMain.update()){
 //		timerBeep.start(5);
-		tone(11, 432, 5);
+//		tone(11, 432, 5);
 		stop();
 	}
 }
@@ -272,7 +280,7 @@ void manageSW2(){
 				// Set timer delay
 				timerMain.setMinutesSeconds(minutes, seconds);
 				// Turn output high
-				digitalWrite(OUT, HIGH);
+				digitalWrite(OUT, LOW);
 				// Start main timer and blink timer
 				timerMain.start();
 				timerDots.start(Timer::LOOP);
@@ -288,7 +296,7 @@ void manageSW2(){
 				// Start blinking diplay
 				timerPause.start(Timer::LOOP);
 				// Turn output LOW.
-				digitalWrite(OUT, LOW);
+				digitalWrite(OUT, HIGH);
 				state = PAUSE;
 				break;
 			// If state is paused, we exit pause.
@@ -301,7 +309,7 @@ void manageSW2(){
 				// Enable display (so we are sure that it doesn't stay shut after pause!)
 				enable = HIGH;
 				// Turn output high again
-				digitalWrite(OUT, HIGH);
+				digitalWrite(OUT, LOW);
 				state = RUN;
 				clock.enable(true);
 				break;
@@ -314,20 +322,19 @@ void manageSW2(){
 
 // Manage switch 3 (encoder button)
 void manageSW3(){
-	if(sw3.justPressed()){
+	if(sw3.justPressed() && state == SETTING){
 		state = MENU;
-		for(uint8_t i = 0; i < 4; i++){
-			ledDriver.clrDigit(i);
-			ledDriver.clrDot(i);
-		}
+		ledDriver.clrAll();
 		menuNaviguate();
+	} else if(sw3.isLongPressed() && (state == RUN || state == PAUSE)){
+		stop();
 	}
 }
 
 // Manage countdown end or manual stop.
 void stop(){
 	//Turn output low.
-	digitalWrite(OUT, LOW);
+	digitalWrite(OUT, HIGH);
 	//Stop the main timer. Needed when stopped by user before countdown end.
 	timerMain.stop();
 
@@ -339,7 +346,7 @@ void stop(){
 	clock.setSeconds(seconds);
 
 	state = SETTING;
-	timerBeep.start(10);
+//	if(enableBell) timerBeep.start(10);
 }
 
 // Timer setter. Called when encoder is moved.
@@ -407,13 +414,16 @@ void menuNaviguate(){
 	bool menuClicked = false;
 	do{
 		// Get en encoder update
-		encoder.update();
-		menuState += encoder.getStep();
+		if(encoder.update()){
+			int8_t step = encoder.getStep();
+			if(step > 0 && menuState < BRIGHTNESS) menuState++;
+			if(step < 0 && menuState > 0) menuState--;
+		}
 
 		// Loop trough menu items
-		if(menuState > SOUND) menuState = SOUND;
+		if(menuState > BRIGHTNESS) menuState = BRIGHTNESS;
 
-		// Get a puch from the right button
+		// Get a push from the right button
 		if(sw2.update()){
 			if(sw2.justPressed()) menuClicked = true;
 		}
@@ -424,22 +434,23 @@ void menuNaviguate(){
 		}
 
 		// Display the right menu item
+		ledDriver.clrAll();
 		switch (menuState){
 			case MEM_STORE:
-				ledDriver.setText("-MEM");
+				ledDriver.setText(F("-MEM"));
 				if(menuClicked) storeTime();
 				break;
 			case MEM_RECALL:
-				ledDriver.setText("MEM-");
+				ledDriver.setText(F("MEM-"));
 				if(menuClicked) recallTime();
 				break;
 			case BRIGHTNESS:
-				ledDriver.setText("LUM");
+				ledDriver.setText(F("LUM"));
 				if(menuClicked) setBrightness();
 				break;
 			case SOUND:
-				ledDriver.setText("BELL");
-				if(menuClicked) setBell();
+				ledDriver.setText(F("BELL"));
+//				if(menuClicked) setBell();
 				break;
 			default:
 				break;
@@ -448,23 +459,26 @@ void menuNaviguate(){
 		menuClicked = false;
 
 	} while(state == MENU);
+	ledDriver.clrAll();
+
 }
 
 // Store a time in eeprom
 void storeTime(){
 	uint8_t mem = currentMem;
+	ledDriver.clrAll();
 	for(;;){
 		sw2.update();
 		sw3.update();
 		if(encoder.update()){
 			mem += encoder.getStep();
 			if(mem < 1) mem = 1;
-			if(mem > 16) mem  =16;
+			if(mem > maxStore) mem = maxStore;
 		}
 
-		ledDriver.setText("-M");
-		ledDriver.setDigit(0, mem % 10);
-		ledDriver.setDigit(1, mem / 10);
+		ledDriver.setText(F("-M"));
+		ledDriver.setDigit(3, mem % 10);
+		ledDriver.setDigit(2, mem / 10);
 
 		if(sw2.justPressed()){
 			currentMem = mem;
@@ -481,24 +495,28 @@ void storeTime(){
 // Get a stored time from eeprom
 void recallTime(){
 	uint8_t mem = currentMem;
+	ledDriver.clrAll();
 	for(;;){
 		sw2.update();
 		sw3.update();
 		if(encoder.update()){
 			mem += encoder.getStep();
 			if(mem < 1) mem = 1;
-			if(mem > 16) mem  =16;
+			if(mem > maxStore) mem = maxStore;
 		}
 
-		ledDriver.setText("M-");
-		ledDriver.setDigit(0, mem % 10);
-		ledDriver.setDigit(1, mem / 10);
+		ledDriver.setText(F("M-"));
+		ledDriver.setDigit(3, mem % 10);
+		ledDriver.setDigit(2, mem / 10);
 
 		if(sw2.justPressed()){
 			currentMem = mem;
 			currentMem = mem;
 			minutes = EEPROM.read((memAdd + 2 * mem));
 			seconds = EEPROM.read((memAdd + 2 * mem + 1));
+			clock.setSeconds(seconds);
+			clock.setMinutes(minutes);
+			state = SETTING;
 			return;
 		}
 
@@ -510,6 +528,7 @@ void recallTime(){
 // Set display brightness
 void setBrightness(){
 	uint8_t tempBrightness = brightness;
+	ledDriver.clrAll();
 	for(;;){
 		sw2.update();
 		sw3.update();
@@ -519,9 +538,9 @@ void setBrightness(){
 			if(tempBrightness > 16) tempBrightness  =16;
 		}
 
-		ledDriver.setChar(2, 'L');
-		ledDriver.setDigit(0, tempBrightness % 10);
-		ledDriver.setDigit(1, tempBrightness / 10);
+		ledDriver.setChar(0, 'L');
+		ledDriver.setDigit(3, tempBrightness % 10);
+		ledDriver.setDigit(2, tempBrightness / 10);
 		ledDriver.setIntensity(tempBrightness - 1);
 
 		if(sw2.justPressed()){
@@ -538,9 +557,11 @@ void setBrightness(){
 
 }
 
-// Turne the bell on of off
+/*
+// Turn the bell on of off
 void setBell(){
 	bool enable = enableBell;
+	ledDriver.clrAll();
 	for(;;){
 		sw2.update();
 		sw3.update();
@@ -548,12 +569,12 @@ void setBell(){
 		if(encoder.update()){
 			if(encoder.getStep() > 0){
 				enable = true;
-				ledDriver.setChar(3, 'B');
-				ledDriver.setDigit(0, 1);
+				ledDriver.setChar(0, 'B');
+				ledDriver.setDigit(3, 1);
 			} else {
 				enable = false;
-				ledDriver.setChar(3, 'B');
-				ledDriver.setDigit(0, 0);
+				ledDriver.setChar(0, 'B');
+				ledDriver.setDigit(3, 0);
 			}
 		}
 
@@ -565,5 +586,5 @@ void setBell(){
 
 		if(sw3.justPressed()) return;
 	}
-
 }
+*/
