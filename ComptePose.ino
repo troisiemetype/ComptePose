@@ -94,7 +94,7 @@ const uint8_t maxStore = 64;
 Timer timerMain;
 Timer timerDots;
 Timer timerPause;
-Timer timerBeep;
+//Timer timerBeep;
 
 // This are the classes that manage display
 // ledDriver is usd for direct addressing
@@ -122,7 +122,7 @@ int16_t duration = 0;
 uint8_t brightness = 16;
 
 // Bell enable
-bool enableBell = true;
+//bool enableBell = true;
 
 // Current mem
 uint8_t currentMem = 1;
@@ -143,10 +143,11 @@ enum menuState_t{
 	MEM_RECALL = 0,
 	MEM_STORE,
 	BRIGHTNESS,
-	SOUND,
+//	SOUND,
 };
 
 // And the current state
+// uint8_t is used instead of menuState_t for compare in if structures
 uint8_t menuState = MEM_RECALL;
 
 
@@ -157,16 +158,16 @@ void setup(){
 	timerMain.init();
 	timerDots.init();
 	timerPause.init();
-	timerBeep.init();
+//	timerBeep.init();
 
 	// Set delay for blink and beep timers
 	timerDots.setDelay(500);
 	timerPause.setDelay(500);
-	timerBeep.setDelay(1000);
+//	timerBeep.setDelay(1000);
 
 	// Read the values from eeprom
 	brightness = EEPROM.read(brightAdd);
-	enableBell = EEPROM.read(bellAdd);
+//	enableBell = EEPROM.read(bellAdd);
 
 	// Set the ledDriver and the clock
 	ledDriver.begin(DATA, LOAD, CLK, 4);
@@ -217,7 +218,6 @@ void loop(){
 
 // Manage SETTING state.
 // Read the encoder and adapt time duration
-// TODO: add access to eeprom for reading and saving reference times
 void setting(){
 	if(encoder.update()){
 		setTime(encoder.getStep());
@@ -448,11 +448,11 @@ void menuNaviguate(){
 				ledDriver.setText(F("LUM"));
 				if(menuClicked) setBrightness();
 				break;
-			case SOUND:
+/*			case SOUND:
 				ledDriver.setText(F("BELL"));
-//				if(menuClicked) setBell();
+				if(menuClicked) setBell();
 				break;
-			default:
+*/			default:
 				break;
 		}
 
@@ -546,10 +546,10 @@ void setBrightness(){
 		if(sw2.justPressed()){
 			brightness = tempBrightness;
 			EEPROM.update(brightAdd, brightness);
-			return;
+			break;
 		}
 
-		if(sw3.justPressed()) return;
+		if(sw3.justPressed()) break;
 
 	}
 
