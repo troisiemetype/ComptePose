@@ -7,18 +7,21 @@ comptepose.name=ComptePose
 
 comptepose.upload.tool=avrdude
 comptepose.upload.protocol=arduino
-comptepose.upload.maximum_size=8192
-comptepose.upload.maximum_data_size=1024
+comptepose.upload.maximum_size=32768
+comptepose.upload.maximum_data_size=2048
 comptepose.upload.speed=115200
 
 comptepose.bootloader.tool=avrdude
 comptepose.bootloader.unlock_bits=0x3F
 comptepose.bootloader.lock_bits=0x0F
-comptepose.bootloader.low_fuses=0x1E
+comptepose.bootloader.low_fuses=0xDE
 comptepose.bootloader.high_fuses=0xD1
-comptepose.bootloader.file=atmega8/ATmegaBOOT.hex
+comptepose.bootloader.extended_fuses=0xFD
+comptepose.bootloader.file=optiboot/optiboot_atmega328.hex
 
-comptepose.build.mcu=atmega8
+comptepose.build.mcu=atmega328p
 comptepose.build.f_cpu=16000000L
 comptepose.build.core=arduino
 comptepose.build.variant=eightanaloginputs
+
+##############################################################
