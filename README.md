@@ -2,7 +2,7 @@
 
 ##This Arduino skecth is for running a Photographic timer, than can be used with enlarger or UV print box.
 
-It basicely has three state:
+It basicly has three state:
 *A setting state, which is used to set an exposure time.
 *A run state, during which it triggers the enlarger / print box.
 *A pause state, where the count down is stopped, and the enlarger / print box shut.

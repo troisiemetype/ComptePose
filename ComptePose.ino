@@ -90,6 +90,7 @@ const uint16_t brightAdd = 0;
 const uint16_t bellTAdd = 1;
 const uint16_t bellLAdd = 2;
 const uint16_t memAdd = 3;
+const uint16_t dispInvAdd = 4;
 
 // Max exposure values in eeprom
 const uint8_t maxStore = 64;
@@ -138,6 +139,9 @@ uint8_t bellType = 0;
 uint8_t bellLength = 0;
 uint16_t bellLoops = 0;
 
+// display inversion
+bool displayInvert = 0;
+
 
 // Timer Top value
 uint16_t counter = 0;
@@ -164,6 +168,7 @@ enum menuState_t{
 	BRIGHTNESS,
 	SOUND_TYPE,
 	SOUND_LENGTH,
+	INVERT,
 };
 
 // And the current state
@@ -192,12 +197,14 @@ void setup(){
 	brightness = EEPROM.read(brightAdd);
 	bellType = EEPROM.read(bellTAdd);
 	bellLength = EEPROM.read(bellLAdd);
+	displayInvert = EEPROM.read(dispInvAdd);
 //	bellLength = 0;
 
 	setBeepTimers(bellType);
 
 	// Set the ledDriver and the clock
 	ledDriver.begin(DATA, LOAD, CLK, 4);
+	ledDriver.invert(displayInvert);
 	ledDriver.setIntensity(brightness - 1);
 
 	clock.begin(&ledDriver);
@@ -560,7 +567,7 @@ void menuNaviguate(){
 		// Get en encoder update
 		if(encoder.update()){
 			int8_t step = encoder.getStep();
-			if(step > 0 && menuState < SOUND_LENGTH) menuState++;
+			if(step > 0 && menuState < INVERT) menuState++;
 			if(step < 0 && menuState > 0) menuState--;
 		}
 
@@ -597,6 +604,10 @@ void menuNaviguate(){
 				ledDriver.setText(F("BL L"));
 				if(menuClicked) setBellLength();
 				break;
+			case INVERT:
+				ledDriver.setText(F("O"));
+				if(menuClicked) setInvert();
+				break;
 			default:
 				break;
 		}
@@ -606,7 +617,7 @@ void menuNaviguate(){
 	} while(state == MENU);
 	ledDriver.clrAll();
 	clock.setDots();
-
+	stop();
 }
 
 // Store a time in eeprom
@@ -763,6 +774,37 @@ void setBellLength(){
 			bellLength = length;
 			EEPROM.update(bellLAdd, length);
 			setBeepTimers(bellType);
+			return;
+		}
+
+		if(sw3.justPressed()) return;
+	}
+}
+
+void setInvert(){
+	bool invert = displayInvert;
+	ledDriver.clrAll();
+	ledDriver.setText(F("O"));
+	ledDriver.setDigit(3, displayInvert);
+
+	for(;;){
+		sw2.update();
+		sw3.update();
+
+		if(encoder.update()){
+			if(encoder.getStep() > 0){
+				invert = 1;
+			} else {
+				invert = 0;
+			}
+			ledDriver.setText(F("O"));
+			ledDriver.setDigit(3, invert);
+		}
+
+		if(sw2.justPressed()){
+			displayInvert = invert;
+			EEPROM.update(dispInvAdd, invert);
+			ledDriver.invert(invert);
 			return;
 		}
 
