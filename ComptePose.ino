@@ -59,7 +59,7 @@
  *	and exposure can be resume.
  *
  ** MENU
- *	is for saving time to, or reading from memory, and set the diplay light intensity.
+ *	is for saving time to, or reading from memory, and set the display light intensity.
  *
  * The main loop reads main button (SW2), and call button management function if needed,
  * or dispatch to main subfunctions according to the current state.
@@ -67,7 +67,10 @@
  */
 
 // NOTA: default time precision: 10min = 10:03 in real life.
-// TODO: see if we can fine tune it.
+
+// SW_VERSIOn is for tracability purpose, and ca be displayed on startup.
+// Leftmost two digits are major version, rightmost two digits are minor version.
+const uint16_t SW_VERSION = 102;
 
 // Const for naming pins
 const uint8_t SW1 = 4;			// This is optional: trace is on PCB, but button is not mounted.
@@ -90,7 +93,6 @@ const uint16_t brightAdd = 0;
 const uint16_t bellTAdd = 1;
 const uint16_t bellLAdd = 2;
 const uint16_t memAdd = 3;
-const uint16_t dispInvAdd = 4;
 
 // Max exposure values in eeprom
 const uint8_t maxStore = 64;
@@ -139,10 +141,6 @@ uint8_t bellType = 0;
 uint8_t bellLength = 0;
 uint16_t bellLoops = 0;
 
-// display inversion
-bool displayInvert = 0;
-
-
 // Timer Top value
 uint16_t counter = 0;
 
@@ -168,7 +166,6 @@ enum menuState_t{
 	BRIGHTNESS,
 	SOUND_TYPE,
 	SOUND_LENGTH,
-	INVERT,
 };
 
 // And the current state
@@ -189,7 +186,7 @@ void setup(){
 	timerBeep2.init();
 	timerBeep3.init();
 
-	// Set delay for blink and beep timers
+	// Set delay for blink and pause timers
 	timerDots.setDelay(500);
 	timerPause.setDelay(500);
 
@@ -197,18 +194,13 @@ void setup(){
 	brightness = EEPROM.read(brightAdd);
 	bellType = EEPROM.read(bellTAdd);
 	bellLength = EEPROM.read(bellLAdd);
-	displayInvert = EEPROM.read(dispInvAdd);
 //	bellLength = 0;
 
 	setBeepTimers(bellType);
 
 	// Set the ledDriver and the clock
 	ledDriver.begin(DATA, LOAD, CLK, 4);
-	ledDriver.invert(displayInvert);
 	ledDriver.setIntensity(brightness - 1);
-
-	clock.begin(&ledDriver);
-	clock.setDots();
 
 	// init the encoder
 	// QUAD_STEP and reverse() may not be needed, following encoder used.
@@ -226,6 +218,18 @@ void setup(){
 
 	// Setup the timer and pins for the ring.
 	beepSetup();
+
+	if(!digitalRead(SW2)){
+		uint16_t version = SW_VERSION;
+		for(uint8_t i = 0; i < 4; ++i){
+			ledDriver.setDigit(3 - i, version % 10);
+			version /= 10;
+		}
+		delay(5000);
+	}
+
+	clock.begin(&ledDriver);
+	clock.setDots();
 }
 
 // Main loop: read buttons, dispatch to state function
@@ -275,6 +279,7 @@ void beeping(){
 	}
 	if(timerBeep3.update()){
 		state = SETTING;
+		timerBeep3.stop();
 		timerBeep2.stop();
 		timerBeep1.stop();
 		beepOff();
@@ -424,6 +429,7 @@ void stop(){
 	digitalWrite(OUT, HIGH);
 	//Stop the main timer. Needed when stopped by user before countdown end.
 	timerMain.stop();
+	timerDots.stop();
 
 	//Enable clock. Needed if we stop timer when pausing
 	//Update display with time previously set
@@ -567,7 +573,7 @@ void menuNaviguate(){
 		// Get en encoder update
 		if(encoder.update()){
 			int8_t step = encoder.getStep();
-			if(step > 0 && menuState < INVERT) menuState++;
+			if(step > 0 && menuState < SOUND_LENGTH) menuState++;
 			if(step < 0 && menuState > 0) menuState--;
 		}
 
@@ -603,10 +609,6 @@ void menuNaviguate(){
 			case SOUND_LENGTH:
 				ledDriver.setText(F("BL L"));
 				if(menuClicked) setBellLength();
-				break;
-			case INVERT:
-				ledDriver.setText(F("O"));
-				if(menuClicked) setInvert();
 				break;
 			default:
 				break;
@@ -781,43 +783,12 @@ void setBellLength(){
 	}
 }
 
-void setInvert(){
-	bool invert = displayInvert;
-	ledDriver.clrAll();
-	ledDriver.setText(F("O"));
-	ledDriver.setDigit(3, displayInvert);
-
-	for(;;){
-		sw2.update();
-		sw3.update();
-
-		if(encoder.update()){
-			if(encoder.getStep() > 0){
-				invert = 1;
-			} else {
-				invert = 0;
-			}
-			ledDriver.setText(F("O"));
-			ledDriver.setDigit(3, invert);
-		}
-
-		if(sw2.justPressed()){
-			displayInvert = invert;
-			EEPROM.update(dispInvAdd, invert);
-			ledDriver.invert(invert);
-			return;
-		}
-
-		if(sw3.justPressed()) return;
-	}
-}
-
 void beepSetup(){
 	pinMode(BELL1, OUTPUT);
 	pinMode(BELL2, OUTPUT);
 
-	digitalWrite(BELL1, LOW);
-	digitalWrite(BELL2, HIGH);
+	digitalWrite(BELL1, 0);
+	digitalWrite(BELL2, 1);
 
 	counter = 8000;
 
@@ -830,11 +801,16 @@ void beepSetup(){
 
 
 ISR(TIMER1_COMPA_vect){
-	PINB = 0b00000010;
+//	PINB = 0b00000010;
+	PINB &= ~(1 << 2);
+	PINB |= (1 << 1);
+
 }
 
 ISR(TIMER1_COMPB_vect){
-	PINB = 0b00000100;
+//	PINB = 0b00000100;
+	PINB &= ~(1 << 1);
+	PINB |= (1 << 2);
 }
 
 void beepOn(){

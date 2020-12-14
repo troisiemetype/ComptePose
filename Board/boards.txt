@@ -23,5 +23,6 @@ comptepose.build.mcu=atmega328p
 comptepose.build.f_cpu=16000000L
 comptepose.build.core=arduino
 comptepose.build.variant=eightanaloginputs
+comptepose.build.board=AVR_COMPTEPOSE
 
 ##############################################################
