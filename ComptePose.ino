@@ -29,9 +29,8 @@
 
 /* NOTA
  * These values are for v1 and above, with atmega 328P.
- * Pin for optionnal switch 1: 			4 (PORT D 4)
- * Pin for switch 2: 					5 (PORT D 5)
- * Pin for switch 3 (encoder switch): 	6 (PORT D 6)
+ * Pin for switch 1: 					6 (PORT D 6) 			sw1 & sw2 are swaped / schematic design. Don't ask.
+ * Pin for switch 2 (encoder switch): 	5 (PORT D 5)
  *
  * Pins for encoder A: 					2 (PORT D 2) 
  * Pins for encoder B: 					3 (PORT D 3) 
@@ -41,9 +40,32 @@
  * 						Load:			15/A1 (PORT C 1)
  * 						Clk:			16/A2 (PORT C 2)
  *
- * Pin for output to relay:				8 (PORT B 0)
+ * Pin for output to relay:				8 (PORT B 0)			hardwired to out1
  *
  * Pin for piezo:						9 & 10 (PORT B 1 & 2) (hardware Timer 1 channel A & B, OC1A & OC1B)
+ *
+ * Non used pins are mapped to connectors on the board. They are :
+ * Digital pins :
+ * 		0			PORT D 0		RXD
+ *		1			PORT D 1		TXD
+ *		6			PORT D 6
+ *		7			PORT D 7				// marked as output 2, and default driven same as output 1 (relay)
+ *
+ * Analog pins :
+ *		A3 / 17		PORT C 3
+ *		A4 / 18		PORT C 4		SDA
+ *		A5 / 19		PORT C 5		SCL
+ *		A6			analog input only
+ *		A7			analog input only
+ *
+ * Additionnaly to those pins, there also is the ICSP header, exposing :
+ *					MISO x  x 5V
+ *					 SCK x  x MOSI
+ *				   RESET x  x GND
+ *
+ *		11			PORT B 3		MOSI
+ *		12			PORT B 4		MISO
+ *		13			PORT B 5		SCK
  */
 
 /*
@@ -61,21 +83,20 @@
  ** MENU
  *	is for saving time to, or reading from memory, and set the display light intensity.
  *
- * The main loop reads main button (SW2), and call button management function if needed,
+ * The main loop reads main button (SW1), and call button management function if needed,
  * or dispatch to main subfunctions according to the current state.
  * See functions for more information on what happens
  */
 
 // NOTA: default time precision: 10min = 10:03 in real life.
 
-// SW_VERSIOn is for tracability purpose, and ca be displayed on startup.
+// SW_VERSION is for tracability purpose, and can be displayed on startup by pressing switch 1 when powering up.
 // Leftmost two digits are major version, rightmost two digits are minor version.
-const uint16_t SW_VERSION = 102;
+const uint16_t SW_VERSION = 200;
 
 // Const for naming pins
-const uint8_t SW1 = 4;			// This is optional: trace is on PCB, but button is not mounted.
+const uint8_t SW1 = 4;
 const uint8_t SW2 = 5;
-const uint8_t SW3 = 6;
 
 const uint8_t ENCA = 2;
 const uint8_t ENCB = 3;
@@ -85,6 +106,7 @@ const uint8_t LOAD = 15;
 const uint8_t CLK = 16;
 
 const uint8_t OUT = 8;
+const uint8_t OUT2 = 7; 		// Optionnal output port.
 const uint8_t BELL1 = 9;
 const uint8_t BELL2 = 10;
 
@@ -122,9 +144,8 @@ Encoder encoder;
 
 // And push button.
 // Uncomment if you will to use the optionnal button placed left of the display
-//PushButton sw1;
+PushButton sw1;
 PushButton sw2;
-PushButton sw3;
 
 // State of the clock. Used for blinking when paused.
 bool enable = LOW;
@@ -208,23 +229,27 @@ void setup(){
 //	encoder.reverse();
 
 	// Init the push buttons
-//	sw1.begin(SW1, INPUT_PULLUP);
+	sw1.begin(SW1, INPUT_PULLUP);
 	sw2.begin(SW2, INPUT_PULLUP);
-	sw3.begin(SW3, INPUT_PULLUP);
 
 	// Set the command pin
 	pinMode(OUT, OUTPUT);
 	digitalWrite(OUT, HIGH);
 
+	pinMode(OUT2, OUTPUT);
+	digitalWrite(OUT2, HIGH);
+
 	// Setup the timer and pins for the ring.
 	beepSetup();
+	beepOff();
 
-	if(!digitalRead(SW2)){
+	if(!digitalRead(SW1)){
 		uint16_t version = SW_VERSION;
 		for(uint8_t i = 0; i < 4; ++i){
 			ledDriver.setDigit(3 - i, version % 10);
 			version /= 10;
 		}
+		if(digitalRead(SW2)) eepromInit();
 		delay(5000);
 	}
 
@@ -234,8 +259,8 @@ void setup(){
 
 // Main loop: read buttons, dispatch to state function
 void loop(){
+	if(sw1.update()) manageSW1();
 	if(sw2.update()) manageSW2();
-	if(sw3.update()) manageSW3();
 	switch(state){
 		case SETTING:
 			setting();
@@ -332,7 +357,7 @@ void pause(){
 
 // Push button manager
 // Attached to SW2, which is placed on right of rotary encoder
-void manageSW2(){
+void manageSW1(){
 	// Stop beeps if beeping.
 	if(state == BEEPING){
 		timerBeep1.stop();
@@ -344,12 +369,12 @@ void manageSW2(){
 	}
 
 	// Stop the timer if long pressed
-	if(sw2.isLongPressed()){
+	if(sw1.isLongPressed()){
 		stop();
 		state = SETTING;
 
 	// If simple pressed, dispatch following current state
-	} else if(sw2.justPressed()){
+	} else if(sw1.justPressed()){
 		switch(state){
 			// If state is setting, then we launch the timer with the delay set
 			case SETTING:
@@ -362,6 +387,7 @@ void manageSW2(){
 				timerMain.setMinutesSeconds(minutes, seconds);
 				// Turn output high
 				digitalWrite(OUT, LOW);
+				digitalWrite(OUT2, LOW);
 				// Start main timer and blink timer
 				timerMain.start();
 				timerDots.start(Timer::LOOP);
@@ -378,6 +404,7 @@ void manageSW2(){
 				timerPause.start(Timer::LOOP);
 				// Turn output LOW.
 				digitalWrite(OUT, HIGH);
+				digitalWrite(OUT2, HIGH);
 				state = PAUSE;
 				break;
 			// If state is paused, we exit pause.
@@ -391,6 +418,7 @@ void manageSW2(){
 				enable = HIGH;
 				// Turn output high again
 				digitalWrite(OUT, LOW);
+				digitalWrite(OUT2, LOW);
 				state = RUN;
 				clock.enable(true);
 				break;
@@ -402,7 +430,7 @@ void manageSW2(){
 }
 
 // Manage switch 3 (encoder button)
-void manageSW3(){
+void manageSW2(){
 	// Stop beeps if beeping.
 	if(state == BEEPING){
 		timerBeep1.stop();
@@ -413,11 +441,11 @@ void manageSW3(){
 		return;
 	}
 
-	if(sw3.justPressed() && state == SETTING){
+	if(sw2.justPressed() && state == SETTING){
 		state = MENU;
 		ledDriver.clrAll();
 		menuNaviguate();
-	} else if(sw3.isLongPressed() && (state == RUN || state == PAUSE)){
+	} else if(sw2.isLongPressed() && (state == RUN || state == PAUSE)){
 		stop();
 		state = SETTING;
 	}
@@ -427,6 +455,7 @@ void manageSW3(){
 void stop(){
 	//Turn output low.
 	digitalWrite(OUT, HIGH);
+	digitalWrite(OUT2, HIGH);
 	//Stop the main timer. Needed when stopped by user before countdown end.
 	timerMain.stop();
 	timerDots.stop();
@@ -508,7 +537,7 @@ void setBeepTimers(int8_t type){
 	switch(type){
 		case 0:
 			delay1 = 100;
-			delay2 = 100;
+			delay2 = 90;
 			delay3 = 0;
 			break;
 		case 1:
@@ -578,13 +607,13 @@ void menuNaviguate(){
 		}
 
 		// Get a push from the right button
-		if(sw2.update()){
-			if(sw2.justPressed()) menuClicked = true;
+		if(sw1.update()){
+			if(sw1.justPressed()) menuClicked = true;
 		}
 
 		// Get a push from the encoder button
-		if(sw3.update()){
-			if(sw3.justPressed()) state = SETTING;
+		if(sw2.update()){
+			if(sw2.justPressed()) state = SETTING;
 		}
 
 		// Display the right menu item
@@ -627,8 +656,8 @@ void storeTime(){
 	uint8_t mem = currentMem;
 	ledDriver.clrAll();
 	for(;;){
+		sw1.update();
 		sw2.update();
-		sw3.update();
 		if(encoder.update()){
 			mem += encoder.getStep();
 			if(mem < 1) mem = 1;
@@ -639,14 +668,14 @@ void storeTime(){
 		ledDriver.setDigit(3, mem % 10);
 		ledDriver.setDigit(2, mem / 10);
 
-		if(sw2.justPressed()){
+		if(sw1.justPressed()){
 			currentMem = mem;
 			EEPROM.update((memAdd + 2 * mem), minutes);
 			EEPROM.update((memAdd + 2 * mem + 1), seconds);
 			return;
 		}
 
-		if(sw3.justPressed()) return;
+		if(sw2.justPressed()) return;
 
 	}
 }
@@ -656,8 +685,8 @@ void recallTime(){
 	uint8_t mem = currentMem;
 	ledDriver.clrAll();
 	for(;;){
+		sw1.update();
 		sw2.update();
-		sw3.update();
 		if(encoder.update()){
 			mem += encoder.getStep();
 			if(mem < 1) mem = 1;
@@ -668,7 +697,7 @@ void recallTime(){
 		ledDriver.setDigit(3, mem % 10);
 		ledDriver.setDigit(2, mem / 10);
 
-		if(sw2.justPressed()){
+		if(sw1.justPressed()){
 			currentMem = mem;
 			currentMem = mem;
 			minutes = EEPROM.read((memAdd + 2 * mem));
@@ -679,7 +708,7 @@ void recallTime(){
 			return;
 		}
 
-		if(sw3.justPressed()) return;
+		if(sw2.justPressed()) return;
 
 	}
 }
@@ -689,8 +718,8 @@ void setBrightness(){
 	uint8_t tempBrightness = brightness;
 	ledDriver.clrAll();
 	for(;;){
+		sw1.update();
 		sw2.update();
-		sw3.update();
 		if(encoder.update()){
 			tempBrightness += encoder.getStep();
 			if(tempBrightness < 1) tempBrightness = 1;
@@ -702,13 +731,13 @@ void setBrightness(){
 		ledDriver.setDigit(2, tempBrightness / 10);
 		ledDriver.setIntensity(tempBrightness - 1);
 
-		if(sw2.justPressed()){
+		if(sw1.justPressed()){
 			brightness = tempBrightness;
 			EEPROM.update(brightAdd, brightness);
 			break;
 		}
 
-		if(sw3.justPressed()) break;
+		if(sw2.justPressed()) break;
 
 	}
 
@@ -725,8 +754,8 @@ void setBellType(){
 	ledDriver.setDigit(3, type);
 
 	for(;;){
+		sw1.update();
 		sw2.update();
-		sw3.update();
 
 		if(encoder.update()){
 			if(encoder.getStep() > 0){
@@ -738,14 +767,14 @@ void setBellType(){
 			ledDriver.setDigit(3, type);
 		}
 
-		if(sw2.justPressed()){
+		if(sw1.justPressed()){
 			bellType = type;
 			EEPROM.update(bellTAdd, type);
 			setBeepTimers(bellType);
 			return;
 		}
 
-		if(sw3.justPressed()) return;
+		if(sw2.justPressed()) return;
 	}
 }
 
@@ -758,8 +787,8 @@ void setBellLength(){
 	ledDriver.setDigit(2, length / 10);
 
 	for(;;){
+		sw1.update();
 		sw2.update();
-		sw3.update();
 
 		if(encoder.update()){
 			if(encoder.getStep() > 0){
@@ -772,52 +801,53 @@ void setBellLength(){
 			ledDriver.setDigit(2, length / 10);
 		}
 
-		if(sw2.justPressed()){
+		if(sw1.justPressed()){
 			bellLength = length;
 			EEPROM.update(bellLAdd, length);
 			setBeepTimers(bellType);
 			return;
 		}
 
-		if(sw3.justPressed()) return;
+		if(sw2.justPressed()) return;
 	}
 }
 
 void beepSetup(){
-	pinMode(BELL1, OUTPUT);
-	pinMode(BELL2, OUTPUT);
-
-	digitalWrite(BELL1, 0);
-	digitalWrite(BELL2, 1);
+	// Note : both piezo pins are inputs when not beeping, because otherwise there is a small noise when beeps are off.
+	pinMode(BELL1, INPUT);
+	pinMode(BELL2, INPUT);
 
 	counter = 8000;
 
 	TCCR1A = 0b00000000;
 	TCCR1B = 0b00001000;
-	TIMSK1 = 0b00000110;
+	TIMSK1 = 0b00000010;
 	OCR1A = counter;
-	OCR1B = counter;
 }
 
 
 ISR(TIMER1_COMPA_vect){
 //	PINB = 0b00000010;
-	PINB &= ~(1 << 2);
-	PINB |= (1 << 1);
+//	PINB &= ~(1 << 2);
+//	PINB |= (1 << 1);
+	PINB = 0b00000110;
 
-}
-
-ISR(TIMER1_COMPB_vect){
-//	PINB = 0b00000100;
-	PINB &= ~(1 << 1);
-	PINB |= (1 << 2);
 }
 
 void beepOn(){
+	// Setting the two piezo pins as outputs (above ISR take care of driving them high or low).
+	// One output low, the other high (bith high, then toggling one).
+	DDRB |= 0b110;
+	PORTB |= 0b110;
+	PINB |= 0b100;
+	// Then enable timer, no prescaller
 	TCCR1B |= 1;
 }
 
 void beepOff(){
+	// Setting the two piezo pins as inputs, three-stated.
+	DDRB &= ~(0b110);
+	PORTB &= ~(0b110);
 	TCCR1B &= ~1;
 }
 
